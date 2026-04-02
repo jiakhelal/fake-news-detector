@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 import torch
 import re
+import os
 from transformers import BertTokenizerFast, BertForSequenceClassification
 from groq import Groq
 
@@ -12,9 +13,9 @@ app = Flask(__name__, template_folder="templates")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # -----------------------
-# LOAD MODEL
+# LOAD MODEL (FROM HF OR LOCAL)
 # -----------------------
-MODEL_PATH = "model"
+MODEL_PATH = "your-username/fake-news-bert"  # 🔥 CHANGE THIS
 
 tokenizer = BertTokenizerFast.from_pretrained(MODEL_PATH)
 
@@ -27,7 +28,7 @@ model.to(device)
 model.eval()
 
 # -----------------------
-# CLEAN TEXT (NOTEBOOK SAME)
+# CLEAN TEXT
 # -----------------------
 def clean_text(text):
     text = str(text)
@@ -38,62 +39,73 @@ def clean_text(text):
     return text.strip()
 
 # -----------------------
-# 🚨 PRODUCTION FAKE RULES
+# STRONG FAKE RULES (PRODUCTION)
 # -----------------------
-STRONG_FAKE_PATTERNS = [
-    # medical scams
-    "cure all", "100% cure", "guaranteed cure", "miracle cure",
-    "no side effects", "instant cure",
+def apply_fake_rules(text):
+    text_lower = text.lower()
 
-    # weight loss scams
-    "lose weight in", "without exercise", "burn fat overnight",
+    # 🚨 health scam patterns
+    if re.search(r'cure|100% cure|guaranteed cure|miracle', text_lower):
+        return True, 0.9
 
-    # conspiracy / unreal
-    "secret organization", "government hiding", "mind control",
-    "time travel", "immortal", "aliens",
+    # 🚨 unrealistic time claims
+    if re.search(r'\b\d+\s*(days?|hours?|weeks?)\b', text_lower):
+        if any(word in text_lower for word in ["cure", "lose", "gain", "fix"]):
+            return True, 0.9
 
-    # clickbait
-    "you won't believe", "doctors hate", "one weird trick",
-    "shocking truth", "what happens next",
+    # 🚨 extreme exaggeration
+    if re.search(r'all types|completely|instantly|without effort', text_lower):
+        return True, 0.85
 
-    # impossible science
-    "without oxygen", "live forever", "reverse aging"
-]
+    # 🚨 conspiracy / sci-fi
+    absurd_patterns = [
+        "aliens",
+        "time travel",
+        "mind control",
+        "secret organization",
+        "immortal",
+        "without oxygen"
+    ]
 
-SUSPICIOUS_WORDS = [
-    "cure", "secret", "alien", "guarantee",
-    "instant", "miracle", "shocking"
-]
+    if any(p in text_lower for p in absurd_patterns):
+        return True, 0.9
+
+    # 🚨 clickbait patterns
+    if "you won’t believe" in text_lower or "this trick" in text_lower:
+        return True, 0.8
+
+    return False, 0.0
 
 # -----------------------
-# PREDICT (ENHANCED)
+# PREDICT (NOTEBOOK LOGIC + RULES)
 # -----------------------
 def predict_news(text):
     model.eval()
 
     text = clean_text(text)
     word_count = len(text.split())
-    text_lower = text.lower()
 
-    # 🚨 RULE 1: STRONG FAKE DETECTION (FIRST)
-    if any(p in text_lower for p in STRONG_FAKE_PATTERNS):
-        return {
-            "prediction": "FAKE",
-            "confidence": 0.9
-        }
-
-    # 🚨 RULE 2: SHORT TEXT
+    # minimal safety
     if word_count < 5:
         return {
             "prediction": "UNCERTAIN",
             "confidence": 0.5
         }
 
-    # 🚨 RULE 3: SHORT TEXT BOOST
+    # short text handling
     short_text_flag = False
     if word_count < 20:
         text = text + " " + text
         short_text_flag = True
+
+    # 🔥 APPLY RULES FIRST
+    is_fake_rule, rule_conf = apply_fake_rules(text)
+
+    if is_fake_rule:
+        return {
+            "prediction": "FAKE",
+            "confidence": rule_conf
+        }
 
     # -----------------------
     # MODEL PREDICTION
@@ -122,14 +134,6 @@ def predict_news(text):
     if short_text_flag:
         confidence *= 0.9
 
-    # 🚨 RULE 4: OVERRIDE WRONG REAL
-    if pred == 1 and confidence < 0.9:
-        if any(w in text_lower for w in SUSPICIOUS_WORDS):
-            return {
-                "prediction": "FAKE",
-                "confidence": 0.85
-            }
-
     return {
         "prediction": "FAKE" if pred == 0 else "REAL",
         "confidence": round(confidence, 3)
@@ -138,7 +142,7 @@ def predict_news(text):
 # -----------------------
 # LLM EXPLANATION
 # -----------------------
-client = Groq(api_key="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")
+client = Groq(api_key=os.getenv("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"))
 
 def generate_explanation(text, prediction, confidence):
     prompt = f"""
@@ -147,14 +151,20 @@ A machine learning model predicted this news as {prediction} with confidence {co
 News:
 {text}
 
-Explain ONLY using:
-- writing style
-- tone
-- exaggeration
-- clarity
-- structure
+Explain WHY using ONLY:
 
-Do NOT use real-world facts.
+1. Writing style  
+2. Tone of language  
+3. Exaggeration or sensational words  
+4. Clarity or vagueness  
+5. Sentence structure  
+
+STRICT RULES:
+- Do NOT use real-world knowledge
+- Do NOT verify facts
+- Only analyze text patterns
+
+Format clearly with numbered points.
 """
 
     try:
@@ -164,7 +174,8 @@ Do NOT use real-world facts.
             temperature=0.3
         )
         return response.choices[0].message.content
-    except:
+
+    except Exception:
         return "Explanation unavailable"
 
 # -----------------------
@@ -201,7 +212,8 @@ def predict():
     return jsonify(result)
 
 # -----------------------
-# RUN
+# RUN (REPLIT FIX)
 # -----------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
