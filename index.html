@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fake News Detector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            text-align: center;
+            padding: 40px;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            margin: auto;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+
+        button {
+            margin-top: 15px;
+            padding: 12px 20px;
+            border: none;
+            background: #667eea;
+            color: white;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #5a67d8;
+        }
+
+        .result {
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .fake { color: red; font-weight: bold; }
+        .real { color: green; font-weight: bold; }
+
+        .card {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            white-space: pre-line;
+        }
+
+        .loader {
+            display: none;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <h2>📰 Fake News Detector</h2>
+
+    <textarea id="news" placeholder="Enter news..."></textarea>
+
+    <br>
+    <button onclick="predict()">Analyze</button>
+
+    <div class="loader" id="loader">⏳ Analyzing...</div>
+
+    <div class="result" id="result"></div>
+</div>
+
+<script>
+function predict() {
+    let text = document.getElementById("news").value;
+
+    if (!text) {
+        alert("Please enter some text!");
+        return;
+    }
+
+    document.getElementById("loader").style.display = "block";
+    document.getElementById("result").innerHTML = "";
+
+    fetch("/predict", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text: text})
+    })
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("loader").style.display = "none";
+
+        let predClass = data.prediction === "FAKE" ? "fake" : "real";
+
+        document.getElementById("result").innerHTML = `
+            <p><strong>Prediction:</strong> 
+                <span class="${predClass}">${data.prediction}</span>
+            </p>
+
+            <p><strong>Confidence:</strong> ${data.confidence}</p>
+
+            <hr>
+
+            <p><strong>Explanation:</strong></p>
+            <div class="card">${data.explanation}</div>
+        `;
+    });
+}
+</script>
+
+</body>
+</html>
